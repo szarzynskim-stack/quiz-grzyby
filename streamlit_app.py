@@ -12,8 +12,6 @@ st.set_page_config(page_title="Trener Grzybiarza 2026", page_icon="🍄", layout
 def pobierz_foto(nazwa):
     if not nazwa or len(nazwa) < 3: return None
     api = "https://pl.wikipedia.org/w/api.php"
-    
-    # Próbujemy: 1. Pełna nazwa, 2. Pierwszy człon (rodzaj)
     frazy = [nazwa, nazwa.split()[0]]
     
     for f in frazy:
@@ -43,7 +41,6 @@ def wczytaj_baze():
                         lista.append((pary[0].strip(), pary[1].strip()))
     return lista
 
-# Inicjalizacja stanu gry
 if 'foto' not in st.session_state: st.session_state.foto = None
 if 'nazwy' not in st.session_state: st.session_state.nazwy = None
 
@@ -51,15 +48,12 @@ baza_pelna = wczytaj_baze()
 
 # --- PANEL BOCZNY: KALENDARZ 2026 ---
 st.sidebar.title("📅 Rok 2026")
-miesiac = st.sidebar.slider("Wybierz miesiąc", 1, 12, datetime.now().month)
+miesiac = st.sidebar.slider("Wybierz miesiąc", 1, 12, 1)
 st.sidebar.subheader(calendar.month_name[miesiac])
 
 cal = calendar.monthcalendar(2026, miesiac)
-cols_head = st.sidebar.columns(7)
-for i, d in enumerate(['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So', 'Nd']):
-    cols_head[i].caption(d)
-
 dzien_wybrany = None
+
 for week in cal:
     cols = st.sidebar.columns(7)
     for i, day in enumerate(week):
@@ -67,12 +61,48 @@ for week in cal:
             if cols[i].button(str(day), key=f"d_{day}_{miesiac}"):
                 dzien_wybrany = day
 
-# --- LOGIKA WYBORU GRZYBA ---
+# --- LOGIKA WYBORU GRZYBA (TUTAJ BYŁ BŁĄD - NAPRAWIONO) ---
 if dzien_wybrany:
-    # Każdy dzień roku to inna partia (seed zapewnia, że ten sam dzień daje te same grzyby)
-    dzien_id = (miesiac * 31) + dzien_wybrany
-    random.seed(dzien_id)
-    
-    # Wybieramy partię 20 grzybów z Twojej listy
+    random.seed((miesiac * 31) + dzien_wybrany)
     if baza_pelna:
-        partia = random.sample(baza_pelna, min(len(
+        # NAPRAWIONA LINIA:
+        ile_grzybow = min(len(baza_pelna), 25)
+        partia = random.sample(baza_pelna, ile_grzybow)
+        
+        with st.spinner("Szukam zdjęcia..."):
+            znaleziono = False
+            for g1, g2 in partia:
+                url = pobierz_foto(g1) or pobierz_foto(g2)
+                if url:
+                    st.session_state.foto = url
+                    st.session_state.nazwy = (g1, g2)
+                    znaleziono = True
+                    break
+            if znaleziono:
+                st.rerun()
+            else:
+                st.sidebar.error("Brak zdjęć w tej partii.")
+
+# --- WIDOK GŁÓWNY ---
+st.title("🍄 Profesjonalny Trener Grzybiarza")
+
+if st.session_state.foto:
+    c1, c2 = st.columns([2, 1])
+    with c1:
+        st.image(st.session_state.foto, use_container_width=True)
+    with c2:
+        with st.form(key="quiz_form"):
+            odp = st.text_input("Twoja odpowiedź:")
+            if st.form_submit_button("Sprawdź"):
+                n1, n2 = st.session_state.nazwy
+                if odp.strip().lower() in [n1.lower(), n2.lower()]:
+                    st.success(f"✅ BRAWO! To: {n1} / {n2}")
+                    st.balloons()
+                else:
+                    st.error(f"❌ NIE. To: {n1} / {n2}")
+    
+    if st.button("Następny grzyb 🔄"):
+        st.session_state.foto = None
+        st.rerun()
+else:
+    st.info("👈
