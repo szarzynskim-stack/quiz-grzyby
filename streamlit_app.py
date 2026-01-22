@@ -3,17 +3,19 @@ import random
 import requests
 import os
 
-# 1. Ustawienia podstawowe
+# 1. Ustawienia wyglądu
 st.set_page_config(page_title="Trener Grzybiarza", page_icon="🍄")
 
-# 2. Funkcja pobierania zdjęcia - Wikipedia
+# 2. Funkcja pobierania zdjęcia - z poprawką na błędy w nazwach
 def pobierz_foto(nazwa):
     if not nazwa:
         return None
+    # Czyścimy nazwę ze zbędnych spacji i znaków
+    czysta_nazwa = nazwa.strip()
     api = "https://pl.wikipedia.org/w/api.php"
     params = {
         "action": "query", "format": "json", "prop": "pageimages",
-        "titles": nazwa.strip(), "pithumbsize": 800, "redirects": 1
+        "titles": czysta_nazwa, "pithumbsize": 800, "redirects": 1
     }
     try:
         r = requests.get(api, params=params, timeout=5).json()
@@ -25,7 +27,7 @@ def pobierz_foto(nazwa):
         return None
     return None
 
-# 3. Wczytywanie Twoich 151 grzybów
+# 3. Wczytywanie bazy - Twoje 151 grzybów
 @st.cache_data
 def wczytaj_baze():
     lista = []
@@ -38,60 +40,58 @@ def wczytaj_baze():
                         lista.append((pary[0].strip(), pary[1].strip()))
     return lista
 
-# 4. Pamięć sesji
-if 'grzyb_aktywny' not in st.session_state:
-    st.session_state.grzyb_aktywny = {"foto": None, "nazwy": None}
+# Inicjalizacja pamięci programu
+if 'aktywny_grzyb' not in st.session_state:
+    st.session_state.aktywny_grzyb = {"foto": None, "nazwy": None}
 
 baza = wczytaj_baze()
 
 # PANEL BOCZNY
-st.sidebar.title("📊 Statystyki")
-st.sidebar.write(f"Liczba gatunków: {len(baza)}")
-if st.sidebar.button("Odśwież bazę"):
+st.sidebar.title("🍄 Statystyki")
+st.sidebar.metric("Grzybów w bazie", len(baza))
+if st.sidebar.button("Wyczyść pamięć i odśwież"):
     st.cache_data.clear()
+    st.session_state.aktywny_grzyb = {"foto": None, "nazwy": None}
     st.rerun()
 
 # STRONA GŁÓWNA
 st.title("🍄 Profesjonalny Trener Grzybiarza")
 
-# 5. Logika przycisku - Szukanie zdjęcia aż do skutku
+# 4. Przycisk losowania - szuka zdjęcia do skutku w Twoich 151 grzybach
 if st.button("Następny grzyb ➡️"):
     if not baza:
-        st.error("Baza jest pusta! Sprawdź plik grzyby_lista.txt")
+        st.error("Nie widzę Twojej listy! Sprawdź plik grzyby_lista.txt")
     else:
-        with st.spinner("Szukam zdjęcia w bazie..."):
-            # Mieszamy bazę, żeby losować
+        with st.spinner("Przeszukuję bazę w poszukiwaniu zdjęcia..."):
             kandydaci = list(baza)
             random.shuffle(kandydaci)
             znaleziono = False
             
-            # Przeszukujemy bazę w poszukiwaniu zdjęcia
-            for n1, n2 in kandydaci:
+            # Próbujemy znaleźć zdjęcie dla pierwszych 50 losowych grzybów
+            for n1, n2 in kandydaci[:50]:
                 url = pobierz_foto(n1) or pobierz_foto(n2)
                 if url:
-                    st.session_state.grzyb_aktywny = {"foto": url, "nazwy": (n1, n2)}
+                    st.session_state.aktywny_grzyb = {"foto": url, "nazwy": (n1, n2)}
                     znaleziono = True
                     break
             
             if znaleziono:
                 st.rerun()
             else:
-                st.warning("Przeszukano bazę, ale Wikipedia nie ma zdjęć dla tych nazw.")
+                st.warning("Przeszukałem 50 grzybów i Wikipedia nie zwróciła zdjęć. Sprawdź, czy nazwy w pliku są poprawne (np. Borowik szlachetny)!")
 
-# 6. Wyświetlanie quizu (jeśli zdjęcie istnieje)
-if st.session_state.grzyb_aktywny["foto"]:
-    st.image(st.session_state.grzyb_aktywny["foto"], use_container_width=True)
+# 5. Wyświetlanie zadania
+if st.session_state.aktywny_grzyb["foto"]:
+    st.image(st.session_state.aktywny_grzyb["foto"], use_container_width=True)
     
-    with st.form(key="quiz_form"):
-        odp = st.text_input("Twoja odpowiedź (polska lub łacińska):")
-        submit = st.form_submit_button("Sprawdź")
-        
-        if submit:
-            n1, n2 = st.session_state.grzyb_aktywny["nazwy"]
+    with st.form(key="quiz"):
+        odp = st.text_input("Twoja odpowiedź:")
+        if st.form_submit_button("Sprawdź"):
+            n1, n2 = st.session_state.aktywny_grzyb["nazwy"]
             if odp.strip().lower() in [n1.lower(), n2.lower()]:
-                st.success(f"✅ DOBRZE! To: {n1} / {n2}")
+                st.success(f"✅ BRAWO! To: {n1} / {n2}")
                 st.balloons()
             else:
                 st.error(f"❌ NIE. To: {n1} / {n2}")
 else:
-    st.info("Kliknij przycisk powyżej, aby wylosować grzyba!")
+    st.info("Kliknij przycisk powyżej, aby zacząć naukę!")
