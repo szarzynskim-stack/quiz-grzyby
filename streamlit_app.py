@@ -2,13 +2,11 @@ import streamlit as st
 import random
 import requests
 import os
-import calendar
-from datetime import datetime
 
-# 1. Konfiguracja i Styl
-st.set_page_config(page_title="Trener Grzybiarza 2026", page_icon="🍄", layout="wide")
+# 1. Konfiguracja strony
+st.set_page_config(page_title="Trener Grzybiarza", page_icon="🍄")
 
-# 2. Mechanizm pobierania zdjęć (Wikipedia)
+# 2. Proste pobieranie zdjęcia
 def pobierz_foto(nazwa):
     if not nazwa: return None
     api = "https://pl.wikipedia.org/w/api.php"
@@ -26,7 +24,7 @@ def pobierz_foto(nazwa):
         pass
     return None
 
-# 3. Wczytywanie Twoich 151 grzybów
+# 3. Wczytywanie Twojej listy 151 grzybów
 @st.cache_data
 def wczytaj_baze():
     lista = []
@@ -39,72 +37,33 @@ def wczytaj_baze():
                         lista.append((pary[0].strip(), pary[1].strip()))
     return lista
 
-# 4. Inicjalizacja pamięci programu
-if 'grzyb_dnia' not in st.session_state:
-    st.session_state.grzyb_dnia = {"foto": None, "nazwy": None}
+# Inicjalizacja pamięci
+if 'grzyb' not in st.session_state:
+    st.session_state.grzyb = {"foto": None, "nazwy": None}
 
 baza = wczytaj_baze()
 
-# --- PANEL BOCZNY: KALENDARZ 2026 ---
-st.sidebar.title("📅 Rok 2026")
-miesiac = st.sidebar.selectbox("Miesiąc", list(range(1, 13)), index=0)
-st.sidebar.subheader(calendar.month_name[miesiac])
+# --- PANEL BOCZNY ---
+st.sidebar.title("🍄 Statystyki")
+st.sidebar.metric("Liczba grzybów w bazie", len(baza))
+if st.sidebar.button("Odśwież bazę z GitHub"):
+    st.cache_data.clear()
+    st.rerun()
 
-cal = calendar.monthcalendar(2026, miesiac)
-dzien_wybrany = None
-
-# Wyświetlanie dni kalendarza jako przyciski
-for tyg in cal:
-    cols = st.sidebar.columns(7)
-    for i, d in enumerate(tyg):
-        if d != 0:
-            if cols[i].button(str(d), key=f"d_{d}_{miesiac}"):
-                dzien_wybrany = d
-
-# --- LOGIKA WYBORU PO KLIKNIĘCIU ---
-if dzien_wybrany:
-    with st.spinner("Szukam zdjęcia..."):
-        # Sprawdzamy wszystkie grzyby po kolei, aż któryś będzie miał zdjęcie
-        probki = list(baza)
-        random.shuffle(probki)
-        znaleziono = False
-        
-        for g1, g2 in probki[:40]: # Sprawdź pierwsze 40 losowych z Twojej bazy
-            url = pobierz_foto(g1) or pobierz_foto(g2)
-            if url:
-                st.session_state.grzyb_dnia = {"foto": url, "nazwy": (g1, g2)}
-                znaleziono = True
-                break
-        
-        if znaleziono:
-            st.rerun()
-        else:
-            st.sidebar.warning("Nie znaleziono zdjęcia dla tej grupy. Kliknij inny dzień!")
-
-# --- WIDOK GŁÓWNY ---
+# --- STRONA GŁÓWNA ---
 st.title("🍄 Profesjonalny Trener Grzybiarza")
 
-if st.session_state.grzyb_dnia["foto"]:
-    c1, c2 = st.columns([2, 1])
-    with c1:
-        st.image(st.session_state.grzyb_dnia["foto"], use_container_width=True)
-    with c2:
-        with st.form(key="quiz"):
-            st.write("### Co to za grzyb?")
-            odp = st.text_input("Twoja odpowiedź:")
-            if st.form_submit_button("Sprawdź"):
-                n1, n2 = st.session_state.grzyb_dnia["nazwy"]
-                if odp.strip().lower() in [n1.lower(), n2.lower()]:
-                    st.success(f"✅ BRAWO! To {n1} / {n2}")
-                    st.balloons()
-                else:
-                    st.error(f"❌ BŁĄD. Poprawna nazwa: {n1} / {n2}")
-    
-    if st.button("Kolejny okaz 🔄"):
-        st.session_state.grzyb_dnia = {"foto": None, "nazwy": None}
-        st.rerun()
-else:
-    st.info("👈 Wybierz dzień z kalendarza po lewej stronie, aby rozpocząć.")
-
-st.sidebar.divider()
-st.sidebar.metric("Gatunków w bazie", len(baza))
+# Główny przycisk
+if st.button("LOSUJ GRZYBA ➡️"):
+    if not baza:
+        st.error("Nie znaleziono pliku grzyby_lista.txt lub jest on pusty!")
+    else:
+        with st.spinner("Szukam zdjęcia w bazie 151 grzybów..."):
+            # Mieszamy listę i szukamy pierwszego, który ma zdjęcie
+            testowa_lista = list(baza)
+            random.shuffle(testowa_lista)
+            
+            znaleziono = False
+            for n1, n2 in testowa_lista:
+                # Sprawdzamy obie nazwy (polska/łacina)
+                url = pobierz_foto(n
