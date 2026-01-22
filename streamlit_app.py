@@ -1,112 +1,102 @@
 import streamlit as st
-import requests
 import random
-from datetime import datetime, timedelta
-import json
+import requests
 import os
-import pandas as pd
 
-# --- KONFIGURACJA I USUWANIE DUBLE ---
-st.set_page_config(page_title="Akademia Grzybiarza 1000+", page_icon="🍄", layout="wide")
+# --- KONFIGURACJA STRONY ---
+st.set_page_config(page_title="Trener Grzybiarza 1000+", page_icon="🍄")
 
-def wyczysc_liste():
-    if os.path.exists("grzyby_lista.txt"):
-        with open("grzyby_lista.txt", "r", encoding="utf-8") as f:
-            linie = f.readlines()
-        unikalne = []
-        widziane = set()
-        for l in linie:
-            c = l.strip()
-            if c and c not in widziane:
-                unikalne.append(l)
-                widziane.add(c)
-        if len(unikalne) < len(linie):
-            with open("grzyby_lista.txt", "w", encoding="utf-8") as f:
-                f.writelines(unikalne)
+# --- FUNKCJE POMOCNICZE ---
 
-wyczysc_liste()
+def pobierz_obrazek_wikipedii(nazwa_pl, nazwa_lat):
+    """Próbuje pobrać zdjęcie z Wikipedii. Zwraca None, jeśli nie znajdzie."""
+    frazy = [nazwa_lat, nazwa_pl]
+    for fraza in frazy:
+        api_url = "https://pl.wikipedia.org/w/api.php"
+        params = {
+            "action": "query",
+            "format": "json",
+            "prop": "pageimages",
+            "titles": fraza,
+            "pithumbsize": 800
+        }
+        try:
+            response = requests.get(api_url, params=params, timeout=5)
+            data = response.json()
+            pages = data.get("query", {}).get("pages", {})
+            for p in pages:
+                if "thumbnail" in pages[p]:
+                    return pages[p]["thumbnail"]["source"]
+        except:
+            continue
+    return None
 
-# --- LOGIKA BAZY DANYCH ---
-@st.cache_data
 def laduj_baze():
+    """Wczytuje unikalne gatunki z pliku txt."""
     dane = {}
     if os.path.exists("grzyby_lista.txt"):
         with open("grzyby_lista.txt", "r", encoding="utf-8") as f:
             for linia in f:
                 if ";" in linia:
                     p, l = linia.strip().split(";")
-                    dane[p] = l
-    return dane if dane else {"Borowik szlachetny": "Boletus edulis"}
+                    dane[p.strip()] = l.strip()
+    return dane
 
-def laduj_postepy():
-    if os.path.exists("postepy.json"):
-        try:
-            with open("postepy.json", "r") as f: return json.load(f)
-        except: return {}
-    return {}
+# --- LOGIKA APLIKACJI ---
 
-def zapisz_postepy(p):
-    with open("postepy.json", "w") as f: json.dump(p, f)
+baza_grzybow = laduj_baze()
+st.sidebar.title("📊 Statystyki")
+st.sidebar.write(f"Wszystkich gatunków: **{len(baza_grzybow)}**")
 
-BAZA = laduj_baze()
-if 'postepy' not in st.session_state:
-    st.session_state.postepy = laduj_postepy()
+# Inicjalizacja stanu sesji
+if 'aktualny_grzyb' not in st.session_state:
+    st.session_state.aktualny_grzyb = None
+if 'poprawna_odp' not in st.session_state:
+    st.session_state.poprawna_odp = ""
+if 'zdjecie_url' not in st.session_state:
+    st.session_state.zdjecie_url = ""
 
-# --- PANEL BOCZNY (KALENDARZ) ---
-st.sidebar.header("📅 Twój Kalendarz")
-dzis = datetime.now().date()
-plan = []
-for i in range(7):
-    data = dzis + timedelta(days=i)
-    ds = data.strftime("%Y-%m-%d")
-    ile = len([v for v in st.session_state.postepy.values() if v <= ds]) if i == 0 else list(st.session_state.postepy.values()).count(ds)
-    plan.append({"Dzień": data.strftime("%m-%d"), "Grzyby": ile})
-st.sidebar.table(pd.DataFrame(plan))
-st.sidebar.metric("Wszystkich gatunków", len(BAZA))
+def nowa_zagadka():
+    """Losuje grzyba tak długo, aż znajdzie takiego ze zdjęciem."""
+    gatunki = list(baza_grzybow.keys())
+    random.shuffle(gatunki) # Miesza listę dla lepszej losowości
+    
+    for g_pl in gatunki:
+        g_lat = baza_grzybow[g_pl]
+        url = pobierz_obrazek_wikipedii(g_pl, g_lat)
+        if url: # Jeśli znaleziono zdjęcie
+            st.session_state.aktualny_grzyb = g_pl
+            st.session_state.poprawna_odp = g_lat
+            st.session_state.zdjecie_url = url
+            return
+    st.error("Nie znaleziono żadnego gatunku ze zdjęciem w Twojej bazie!")
 
-# --- QUIZ I WIKI ---
-def losuj():
-    dzis_s = datetime.now().strftime("%Y-%m-%d")
-    do_powt = [g for g in BAZA.keys() if st.session_state.postepy.get(g, "2000-01-01") <= dzis_s]
-    return random.choice(do_powt) if do_powt else random.choice(list(BAZA.keys()))
-
-if 'aktywny' not in st.session_state: st.session_state.aktywny = losuj()
-if 'licznik' not in st.session_state: st.session_state.licznik = 0
-
-def get_wiki(lat):
-    u = f"https://pl.wikipedia.org/api/rest_v1/page/summary/{lat.replace(' ', '_')}"
-    try:
-        r = requests.get(u, headers={'User-Agent': 'MushroomBot/1.0'}, timeout=5).json()
-        return r.get('thumbnail', {}).get('source'), r.get('extract', '')
-    except: return None, ""
-
-img, info = get_wiki(BAZA[st.session_state.aktywny])
+# --- INTERFEJS UŻYTKOWNIKA ---
 
 st.title("🍄 Profesjonalny Trener Grzybiarza")
-c1, c2 = st.columns([1, 1])
-
-with c1:
-    if img: st.image(img, use_container_width=True)
-    else: st.info("Szukam zdjęcia...")
-
-with c2:
-    tryb = st.radio("Zgadujesz:", ["Polska", "Łacina"])
-    with st.form("quiz_form"):
-        poprawne = st.session_state.aktywny if tryb == "Polska" else BAZA[st.session_state.aktywny]
-        odp = st.text_input("Twoja odpowiedź:", key=f"q_{st.session_state.licznik}")
-        if st.form_submit_button("Sprawdź"):
-            teraz = datetime.now()
-            if odp.strip().lower() == poprawne.lower():
-                st.success("✅ Świetnie! Powtórka za 7 dni.")
-                st.session_state.postepy[st.session_state.aktywny] = (teraz + timedelta(days=7)).strftime("%Y-%m-%d")
-                st.balloons()
-                st.write(info)
-            else:
-                st.error(f"❌ To: {poprawne}. Powtórka jutro.")
-                st.session_state.postepy[st.session_state.aktywny] = (teraz + timedelta(days=1)).strftime("%Y-%m-%d")
-            zapisz_postepy(st.session_state.postepy)
 
 if st.button("Następny grzyb ➡️"):
-    st.session_state.aktywny = losuj()
-    st.session_state.licznik += 1
+    nowa_zagadka()
+
+if st.session_state.zdjecie_url:
+    st.image(st.session_state.zdjecie_url, caption="Co to za gatunek?")
+    
+    with st.form("form_odpowiedz"):
+        odp_uzytkownika = st.text_input("Podaj nazwę łacińską:")
+        submit = st.form_submit_button("Sprawdź")
+        
+        if submit:
+            if odp_uzytkownika.strip().lower() == st.session_state.poprawna_odp.lower():
+                st.success(f"Brawo! To {st.session_state.poprawna_odp}")
+                st.balloons()
+            else:
+                st.error(f"Źle! Poprawna nazwa to: {st.session_state.poprawna_odp}")
+                st.info(f"Twoja odpowiedź: {odp_uzytkownika}")
+
+else:
+    st.write("Kliknij przycisk powyżej, aby rozpocząć naukę!")
+
+# Stopka z czyszczeniem pamięci
+if st.sidebar.button("Wyczyść pamięć (Cache)"):
+    st.cache_data.clear()
     st.rerun()
