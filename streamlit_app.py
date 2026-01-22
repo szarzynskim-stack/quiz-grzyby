@@ -3,12 +3,13 @@ import random
 import requests
 import os
 
-# 1. Konfiguracja strony
+# 1. Ustawienia podstawowe
 st.set_page_config(page_title="Trener Grzybiarza", page_icon="🍄")
 
-# 2. Proste pobieranie zdjęcia
+# 2. Funkcja pobierania zdjęcia - Wikipedia
 def pobierz_foto(nazwa):
-    if not nazwa: return None
+    if not nazwa:
+        return None
     api = "https://pl.wikipedia.org/w/api.php"
     params = {
         "action": "query", "format": "json", "prop": "pageimages",
@@ -21,10 +22,10 @@ def pobierz_foto(nazwa):
             if "thumbnail" in pages[p]:
                 return pages[p]["thumbnail"]["source"]
     except:
-        pass
+        return None
     return None
 
-# 3. Wczytywanie Twojej listy 151 grzybów
+# 3. Wczytywanie Twoich 151 grzybów
 @st.cache_data
 def wczytaj_baze():
     lista = []
@@ -37,33 +38,60 @@ def wczytaj_baze():
                         lista.append((pary[0].strip(), pary[1].strip()))
     return lista
 
-# Inicjalizacja pamięci
-if 'grzyb' not in st.session_state:
-    st.session_state.grzyb = {"foto": None, "nazwy": None}
+# 4. Pamięć sesji
+if 'grzyb_aktywny' not in st.session_state:
+    st.session_state.grzyb_aktywny = {"foto": None, "nazwy": None}
 
 baza = wczytaj_baze()
 
-# --- PANEL BOCZNY ---
-st.sidebar.title("🍄 Statystyki")
-st.sidebar.metric("Liczba grzybów w bazie", len(baza))
-if st.sidebar.button("Odśwież bazę z GitHub"):
+# PANEL BOCZNY
+st.sidebar.title("📊 Statystyki")
+st.sidebar.write(f"Liczba gatunków: {len(baza)}")
+if st.sidebar.button("Odśwież bazę"):
     st.cache_data.clear()
     st.rerun()
 
-# --- STRONA GŁÓWNA ---
+# STRONA GŁÓWNA
 st.title("🍄 Profesjonalny Trener Grzybiarza")
 
-# Główny przycisk
-if st.button("LOSUJ GRZYBA ➡️"):
+# 5. Logika przycisku - Szukanie zdjęcia aż do skutku
+if st.button("Następny grzyb ➡️"):
     if not baza:
-        st.error("Nie znaleziono pliku grzyby_lista.txt lub jest on pusty!")
+        st.error("Baza jest pusta! Sprawdź plik grzyby_lista.txt")
     else:
-        with st.spinner("Szukam zdjęcia w bazie 151 grzybów..."):
-            # Mieszamy listę i szukamy pierwszego, który ma zdjęcie
-            testowa_lista = list(baza)
-            random.shuffle(testowa_lista)
-            
+        with st.spinner("Szukam zdjęcia w bazie..."):
+            # Mieszamy bazę, żeby losować
+            kandydaci = list(baza)
+            random.shuffle(kandydaci)
             znaleziono = False
-            for n1, n2 in testowa_lista:
-                # Sprawdzamy obie nazwy (polska/łacina)
-                url = pobierz_foto(n
+            
+            # Przeszukujemy bazę w poszukiwaniu zdjęcia
+            for n1, n2 in kandydaci:
+                url = pobierz_foto(n1) or pobierz_foto(n2)
+                if url:
+                    st.session_state.grzyb_aktywny = {"foto": url, "nazwy": (n1, n2)}
+                    znaleziono = True
+                    break
+            
+            if znaleziono:
+                st.rerun()
+            else:
+                st.warning("Przeszukano bazę, ale Wikipedia nie ma zdjęć dla tych nazw.")
+
+# 6. Wyświetlanie quizu (jeśli zdjęcie istnieje)
+if st.session_state.grzyb_aktywny["foto"]:
+    st.image(st.session_state.grzyb_aktywny["foto"], use_container_width=True)
+    
+    with st.form(key="quiz_form"):
+        odp = st.text_input("Twoja odpowiedź (polska lub łacińska):")
+        submit = st.form_submit_button("Sprawdź")
+        
+        if submit:
+            n1, n2 = st.session_state.grzyb_aktywny["nazwy"]
+            if odp.strip().lower() in [n1.lower(), n2.lower()]:
+                st.success(f"✅ DOBRZE! To: {n1} / {n2}")
+                st.balloons()
+            else:
+                st.error(f"❌ NIE. To: {n1} / {n2}")
+else:
+    st.info("Kliknij przycisk powyżej, aby wylosować grzyba!")
