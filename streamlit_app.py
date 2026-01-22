@@ -3,19 +3,21 @@ import random
 import requests
 import os
 
-# 1. Konfiguracja strony - musi być na samym początku
-st.set_page_config(page_title="Trener Grzybiarza 2000", page_icon="🍄", layout="wide")
+# Konfiguracja strony
+st.set_page_config(page_title="Trener Grzybiarza", page_icon="🍄", layout="wide")
 
-# 2. Funkcja pobierania zdjęć (Wikipedia)
+# Funkcja pobierania zdjęć (Wikipedia API)
 def pobierz_foto(n1, n2):
     api = "https://pl.wikipedia.org/w/api.php"
+    # Szukamy po obu nazwach
     for fraza in [n1, n2]:
+        if not fraza: continue
         params = {
             "action": "query", "format": "json", 
             "prop": "pageimages", "titles": fraza, "pithumbsize": 800
         }
         try:
-            r = requests.get(api, params=params, timeout=3).json()
+            r = requests.get(api, params=params, timeout=5).json()
             pages = r.get("query", {}).get("pages", {})
             for p in pages:
                 if "thumbnail" in pages[p]:
@@ -24,20 +26,21 @@ def pobierz_foto(n1, n2):
             continue
     return None
 
-# 3. Wczytywanie bazy - odporne na błędy w pliku txt
+# Wczytywanie bazy z pliku
 @st.cache_data
 def wczytaj_baze():
     lista = []
-    if os.path.exists("grzyby_lista.txt"):
-        with open("grzyby_lista.txt", "r", encoding="utf-8") as f:
+    sciezka = "grzyby_lista.txt"
+    if os.path.exists(sciezka):
+        with open(sciezka, "r", encoding="utf-8") as f:
             for linia in f:
                 if ";" in linia:
                     czesci = linia.strip().split(";")
                     if len(czesci) >= 2:
                         lista.append((czesci[0].strip(), czesci[1].strip()))
-    return list(set(lista))
+    return list(set(lista)) # usuwa duplikaty
 
-# 4. Inicjalizacja sesji
+# Sesja użytkownika
 if 'aktualny_grzyb' not in st.session_state:
     st.session_state.aktualny_grzyb = None
 if 'aktualne_foto' not in st.session_state:
@@ -45,26 +48,27 @@ if 'aktualne_foto' not in st.session_state:
 
 baza = wczytaj_baze()
 
-# 5. Panel boczny
+# PANEL BOCZNY
 st.sidebar.title("🍄 Statystyki")
 st.sidebar.metric("Liczba gatunków", len(baza))
-if st.sidebar.button("Wyczyść pamięć i odśwież"):
+if st.sidebar.button("Odśwież bazę"):
     st.cache_data.clear()
     st.rerun()
 
-# 6. Interfejs główny
+# STRONA GŁÓWNA
 st.title("🍄 Profesjonalny Trener Grzybiarza")
 
 if st.button("Następny grzyb ➡️"):
     if not baza:
-        st.error("Baza jest pusta! Sprawdź plik grzyby_lista.txt")
+        st.error("Baza w pliku txt jest pusta!")
     else:
-        with st.spinner("Szukam zdjęcia..."):
-            test_lista = list(baza)
-            random.shuffle(test_lista)
+        with st.spinner("Przeszukuję Wikipedię w poszukiwaniu zdjęcia..."):
+            testowa_lista = list(baza)
+            random.shuffle(testowa_lista)
             znaleziono = False
-            # Sprawdzamy pierwsze 60 pozycji, by znaleźć foto
-            for g1, g2 in test_lista[:60]:
+            
+            # Sprawdzamy do 40 gatunków, aż trafimy na zdjęcie
+            for g1, g2 in testowa_lista[:40]:
                 url = pobierz_foto(g1, g2)
                 if url:
                     st.session_state.aktualny_grzyb = (g1, g2)
@@ -73,26 +77,27 @@ if st.button("Następny grzyb ➡️"):
                     break
             
             if not znaleziono:
-                st.warning("Nie znaleziono zdjęć w tej partii. Kliknij jeszcze raz!")
+                st.warning("Nie znaleziono zdjęcia dla wylosowanej partii. Kliknij jeszcze raz!")
             else:
+                # Wymuszenie odświeżenia, by pokazać nowe zdjęcie
                 st.rerun()
 
-# 7. Wyświetlanie quizu (NAPRAWIONA SKŁADNIA)
+# WYŚWIETLANIE QUIZU
 if st.session_state.aktualne_foto:
     col1, col2 = st.columns([2, 1])
+    
     with col1:
         st.image(st.session_state.aktualne_foto, use_container_width=True)
     
     with col2:
-        # TUTAJ BYŁ BŁĄD - dodany klucz i dwukropek
-        with st.form(key="quiz_form"):
+        with st.form(key="form_quiz"):
             tryb = st.radio("Zgadujesz nazwę:", ["Polską", "Łacińską"])
             odpowiedz = st.text_input("Twoja odpowiedź:")
             submit = st.form_submit_button("Sprawdź")
             
             if submit:
                 g1, g2 = st.session_state.aktualny_grzyb
-                # Proste rozpoznawanie polskiej nazwy
+                # Logika rozpoznawania która nazwa jest polska
                 polska_znaki = 'ąćęłńóśźż'
                 g1_pl = any(c in g1.lower() for c in polska_znaki)
                 
@@ -102,10 +107,10 @@ if st.session_state.aktualne_foto:
                 cel = n_pol if tryb == "Polską" else n_lat
                 
                 if odpowiedz.strip().lower() == cel.lower():
-                    st.success(f"✅ DOBRZE! To: {cel}")
+                    st.success(f"✅ BRAWO! To: {cel}")
                     st.balloons()
                 else:
-                    st.error(f"❌ BŁĄD. To: {cel}")
-                    st.info(f"W bazie: {g1} | {g2}")
+                    st.error(f"❌ NIE. To: {cel}")
+                    st.info(f"Pełne dane: {g1} | {g2}")
 else:
-    st.info("Kliknij przycisk powyżej, aby zacząć naukę!")
+    st.info("Kliknij przycisk powyżej, aby rozpocząć!")
