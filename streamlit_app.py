@@ -32,20 +32,21 @@ def wczytaj_grzyby():
         with open("grzyby_lista.txt", "r", encoding="utf-8") as f:
             for linia in f:
                 if ";" in linia:
-                    p, l = linia.strip().split(";")
-                    lista[p.strip()] = l.strip()
+                    czesci = linia.strip().split(";")
+                    if len(czesci) == 2:
+                        p, l = czesci
+                        lista[p.strip()] = l.strip()
     return lista
 
-# --- START APLIKACJI ---
+# --- INICJALIZACJA ---
 baza = wczytaj_grzyby()
 
-# Inicjalizacja sesji
 if 'grzyb_teraz' not in st.session_state:
     st.session_state.grzyb_teraz = None
 if 'foto_url' not in st.session_state:
     st.session_state.foto_url = None
 
-# PANEL BOCZNY
+# --- PANEL BOCZNY ---
 with st.sidebar:
     st.header("📊 Statystyki")
     st.write(f"Wszystkich gatunków: **{len(baza)}**")
@@ -55,7 +56,7 @@ with st.sidebar:
         st.session_state.foto_url = None
         st.rerun()
 
-# GŁÓWNA CZĘŚĆ
+# --- GŁÓWNA CZĘŚĆ ---
 st.title("🍄 Profesjonalny Trener Grzybiarza")
 
 if st.button("Następny grzyb ➡️"):
@@ -64,8 +65,43 @@ if st.button("Następny grzyb ➡️"):
     
     with st.spinner("Szukam grzyba ze zdjęciem..."):
         znaleziono = False
-        # Sprawdzamy pierwsze 25 losowych grzybów
-        for n_pl, n_lat in gatunki[:25]:
+        # Sprawdzamy pierwsze 40 losowych grzybów, żeby trafić na taki ze zdjęciem
+        for n_pl, n_lat in gatunki[:40]:
             url = pobierz_zdjecie(n_pl, n_lat)
             if url:
-                st
+                st.session_state.grzyb_teraz = (n_pl, n_lat)
+                st.session_state.foto_url = url
+                znaleziono = True
+                break
+        
+        if not znaleziono:
+            st.warning("Wikipedia nie zwróciła zdjęć dla wylosowanej partii. Spróbuj jeszcze raz!")
+        else:
+            st.rerun()
+
+# --- WYŚWIETLANIE ZAGADKI ---
+if st.session_state.foto_url:
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.image(st.session_state.foto_url, caption="Rozpoznaj ten gatunek")
+    
+    with col2:
+        # NAPRAWIONY FORMULARZ - z poprawnymi nawiasami i dwukropkiem
+        with st.form(key="formularz_quiz"):
+            st.subheader("Twoja odpowiedź")
+            tryb = st.radio("Zgadujesz:", ["Polską nazwę", "Łacińską nazwę"], horizontal=True)
+            odp = st.text_input("Wpisz nazwę:")
+            submit = st.form_submit_button("Sprawdź")
+            
+            if submit:
+                n_pl, n_lat = st.session_state.grzyb_teraz
+                poprawna = n_pl if tryb == "Polską nazwę" else n_lat
+                
+                if odp.strip().lower() == poprawna.lower():
+                    st.success(f"✅ BRAWO! To: **{poprawna}**")
+                    st.balloons()
+                else:
+                    st.error(f"❌ NIE! Poprawna nazwa to: **{poprawna}**")
+else:
+    st.info("Kliknij przycisk powyżej, aby zacząć naukę!")
