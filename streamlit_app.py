@@ -3,20 +3,20 @@ import random
 import requests
 import os
 
-# 1. Konfiguracja bez zbędnych dodatków
-st.set_page_config(page_title="Quiz Grzybowy", layout="centered")
+# 1. Prosta konfiguracja
+st.set_page_config(page_title="Mushroom Quiz", layout="centered")
 
 def pobierz_foto(nazwa):
-    if not nazwa: return None
-    # Czyścimy nazwę z ukośników i spacji, które psuły wyszukiwanie na screenach
-    czysta = nazwa.replace("/", " ").strip()
+    if not nazwa or len(nazwa) < 3: return None
+    # Wikipedia potrzebuje czystej nazwy (bez ukośników i spacji na końcach)
+    fraza = nazwa.split('/')[0].strip()
     api = "https://pl.wikipedia.org/w/api.php"
     params = {
         "action": "query", "format": "json", "prop": "pageimages",
-        "titles": czysta, "pithumbsize": 800, "redirects": 1
+        "titles": fraza, "pithumbsize": 800, "redirects": 1
     }
     try:
-        r = requests.get(api, params=params, timeout=3).json()
+        r = requests.get(api, params=params, timeout=5).json()
         pages = r.get("query", {}).get("pages", {})
         for p in pages:
             if "thumbnail" in pages[p]:
@@ -31,55 +31,56 @@ def wczytaj_baze():
         with open("grzyby_lista.txt", "r", encoding="utf-8") as f:
             for linia in f:
                 if ";" in linia:
-                    pary = linia.strip().split(";")
-                    if len(pary) >= 2:
-                        # Pobieramy czyste nazwy bez śmieci tekstowych
-                        n1 = pary[0].split("/")[0].strip()
-                        n2 = pary[1].split("/")[0].strip()
-                        lista.append((n1, n2))
+                    czesci = linia.strip().split(";")
+                    if len(czesci) >= 2:
+                        # Zapisujemy tylko "czyste" nazwy do quizu
+                        lista.append((czesci[0].strip(), czesci[1].strip()))
     return lista
 
-# Zarządzanie stanem aplikacji
-if 'foto' not in st.session_state: st.session_state.foto = None
-if 'odpowiedz' not in st.session_state: st.session_state.odpowiedz = None
+# Pamięć sesji
+if 'foto_url' not in st.session_state: st.session_state.foto_url = None
+if 'poprawne' not in st.session_state: st.session_state.poprawne = None
 
 baza = wczytaj_baze()
 
-st.title("🍄 Quiz: Rozpoznaj Grzyba")
+st.title("🍄 Quiz: Co to za grzyb?")
 
-# Główny mechanizm
+# Główny przycisk
 if st.button("LOSUJ NASTĘPNEGO ➡️"):
-    with st.spinner("Szukam zdjęcia..."):
+    with st.spinner("Przeszukuję Twoją listę..."):
         kandydaci = list(baza)
         random.shuffle(kandydaci)
         znaleziono = False
         
-        # Sprawdzamy do 15 grzybów, żeby nie zawiesić programu
-        for p1, p2 in kandydaci[:15]:
+        # Sprawdzamy do 20 pozycji, żeby szybko znaleźć zdjęcie
+        for p1, p2 in kandydaci[:20]:
             url = pobierz_foto(p1) or pobierz_foto(p2)
             if url:
-                st.session_state.foto = url
-                st.session_state.odpowiedz = (p1, p2)
+                st.session_state.foto_url = url
+                st.session_state.poprawne = (p1, p2)
                 znaleziono = True
                 break
         
         if znaleziono:
             st.rerun()
         else:
-            st.error("Wikipedia nie chce dać zdjęć dla tych nazw. Spróbuj jeszcze raz.")
+            st.error("Nie znaleziono zdjęcia. Kliknij jeszcze raz!")
 
-# Wyświetlanie Quizu
-if st.session_state.foto:
-    st.image(st.session_state.foto, caption="Co to za gatunek?", use_container_width=True)
+# Wyświetlanie zdjęcia i formularza
+if st.session_state.foto_url:
+    st.image(st.session_state.foto_url, use_container_width=True)
     
-    with st.form("f_quiz"):
-        user_input = st.text_input("Twoja odpowiedź:")
-        if st.form_submit_button("Sprawdź"):
-            n1, n2 = st.session_state.odpowiedz
-            if user_input.strip().lower() in [n1.lower(), n2.lower()]:
-                st.success(f"✅ BRAWO! To: {n1} / {n2}")
+    with st.form(key="quiz_input"):
+        odp = st.text_input("Twoja odpowiedź:")
+        sprawdz = st.form_submit_button("Sprawdź")
+        
+        if sprawdz:
+            n1, n2 = st.session_state.poprawne
+            # Porównujemy odpowiedź z obiema nazwami z listy
+            if odp.strip().lower() in [n1.lower(), n2.lower()]:
+                st.success(f"✅ BRAWO! To: {n1}")
                 st.balloons()
             else:
-                st.error(f"❌ NIE. Poprawna nazwa to: {n1} / {n2}")
+                st.error(f"❌ NIE. To: {n1}")
 else:
-    st.info("Kliknij przycisk powyżej, aby wylosować grzyba z Twojej listy 151 gatunków.")
+    st.info("Kliknij przycisk powyżej, aby wylosować grzyba z Twojej bazy (151 sztuk).")
