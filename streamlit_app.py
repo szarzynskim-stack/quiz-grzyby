@@ -3,21 +3,20 @@ import random
 import requests
 import os
 
-# --- KONFIGURACJA STRONY ---
-st.set_page_config(page_title="Trener Grzybiarza 1000", page_icon="🍄", layout="wide")
+# --- KONFIGURACJA ---
+st.set_page_config(page_title="Trener Grzybiarza", page_icon="🍄")
 
-def pobierz_zdjecie(nazwa_pl, nazwa_lat):
-    """Pobiera zdjęcie z Wikipedii. Zwraca None, jeśli nie znajdzie."""
-    for fraza in [nazwa_lat, nazwa_pl]:
-        api_url = "https://pl.wikipedia.org/w/api.php"
+def pobierz_foto(n_pl, n_lat):
+    """Próbuje pobrać zdjęcie. Jeśli nie ma w 2 sekundy, odpuszcza."""
+    api = "https://pl.wikipedia.org/w/api.php"
+    for fraza in [n_lat, n_pl]:
         params = {
             "action": "query", "format": "json", "prop": "pageimages",
-            "titles": fraza, "pithumbsize": 800
+            "titles": fraza, "pithumbsize": 500
         }
         try:
-            r = requests.get(api_url, params=params, timeout=2)
-            data = r.json()
-            pages = data.get("query", {}).get("pages", {})
+            r = requests.get(api, params=params, timeout=2).json()
+            pages = r.get("query", {}).get("pages", {})
             for p in pages:
                 if "thumbnail" in pages[p]:
                     return pages[p]["thumbnail"]["source"]
@@ -25,38 +24,34 @@ def pobierz_zdjecie(nazwa_pl, nazwa_lat):
             continue
     return None
 
-def wczytaj_grzyby():
-    """Ładuje gatunki z pliku txt."""
-    lista = {}
+def laduj_liste():
+    """Wczytuje Twoje 1076 gatunków z pliku."""
+    dane = {}
     if os.path.exists("grzyby_lista.txt"):
         with open("grzyby_lista.txt", "r", encoding="utf-8") as f:
             for linia in f:
                 if ";" in linia:
                     czesci = linia.strip().split(";")
                     if len(czesci) == 2:
-                        p, l = czesci
-                        lista[p.strip()] = l.strip()
-    return lista
+                        dane[czesci[0].strip()] = czesci[1].strip()
+    return dane
 
-# --- INICJALIZACJA ---
-baza = wczytaj_grzyby()
+# --- LOGIKA ---
+baza = laduj_liste()
 
-if 'grzyb_teraz' not in st.session_state:
-    st.session_state.grzyb_teraz = None
-if 'foto_url' not in st.session_state:
-    st.session_state.foto_url = None
+if 'grzyb' not in st.session_state:
+    st.session_state.grzyb = None
+if 'foto' not in st.session_state:
+    st.session_state.foto = None
 
 # --- PANEL BOCZNY ---
-with st.sidebar:
-    st.header("📊 Statystyki")
-    st.write(f"Wszystkich gatunków: **{len(baza)}**")
-    if st.button("Wyczyść pamięć i odśwież"):
-        st.cache_data.clear()
-        st.session_state.grzyb_teraz = None
-        st.session_state.foto_url = None
-        st.rerun()
+st.sidebar.title("📊 Statystyki")
+st.sidebar.write(f"Wszystkich gatunków: **{len(baza)}**")
+if st.sidebar.button("Odśwież bazę"):
+    st.cache_data.clear()
+    st.rerun()
 
-# --- GŁÓWNA CZĘŚĆ ---
+# --- GŁÓWNA STRONA ---
 st.title("🍄 Profesjonalny Trener Grzybiarza")
 
 if st.button("Następny grzyb ➡️"):
@@ -65,43 +60,37 @@ if st.button("Następny grzyb ➡️"):
     
     with st.spinner("Szukam grzyba ze zdjęciem..."):
         znaleziono = False
-        # Sprawdzamy pierwsze 40 losowych grzybów, żeby trafić na taki ze zdjęciem
-        for n_pl, n_lat in gatunki[:40]:
-            url = pobierz_zdjecie(n_pl, n_lat)
+        # Sprawdzamy tylko pierwsze 50 losowych, żeby nie wieszać strony
+        for p, l in gatunki[:50]:
+            url = pobierz_foto(p, l)
             if url:
-                st.session_state.grzyb_teraz = (n_pl, n_lat)
-                st.session_state.foto_url = url
+                st.session_state.grzyb = (p, l)
+                st.session_state.foto = url
                 znaleziono = True
                 break
         
         if not znaleziono:
-            st.warning("Wikipedia nie zwróciła zdjęć dla wylosowanej partii. Spróbuj jeszcze raz!")
+            st.error("Nie udało się znaleźć zdjęcia. Kliknij jeszcze raz!")
         else:
             st.rerun()
 
-# --- WYŚWIETLANIE ZAGADKI ---
-if st.session_state.foto_url:
-    col1, col2 = st.columns([2, 1])
+# --- FORMULARZ ---
+if st.session_state.foto:
+    st.image(st.session_state.foto)
     
-    with col1:
-        st.image(st.session_state.foto_url, caption="Rozpoznaj ten gatunek")
-    
-    with col2:
-        # NAPRAWIONY FORMULARZ - z poprawnymi nawiasami i dwukropkiem
-        with st.form(key="formularz_quiz"):
-            st.subheader("Twoja odpowiedź")
-            tryb = st.radio("Zgadujesz:", ["Polską nazwę", "Łacińską nazwę"], horizontal=True)
-            odp = st.text_input("Wpisz nazwę:")
-            submit = st.form_submit_button("Sprawdź")
-            
-            if submit:
-                n_pl, n_lat = st.session_state.grzyb_teraz
-                poprawna = n_pl if tryb == "Polską nazwę" else n_lat
-                
-                if odp.strip().lower() == poprawna.lower():
-                    st.success(f"✅ BRAWO! To: **{poprawna}**")
-                    st.balloons()
-                else:
-                    st.error(f"❌ NIE! Poprawna nazwa to: **{poprawna}**")
+    # Formularz z poprawną składnią (zwróć uwagę na dwukropek!)
+    with st.form(key="quiz_form"):
+        tryb = st.radio("Zgadujesz:", ["Polską nazwę", "Łacińską nazwę"], horizontal=True)
+        odp = st.text_input("Twoja odpowiedź:")
+        submit = st.form_submit_button("Sprawdź")
+        
+        if submit:
+            n_pl, n_lat = st.session_state.grzyb
+            poprawna = n_pl if tryb == "Polską nazwę" else n_lat
+            if odp.strip().lower() == poprawna.lower():
+                st.success(f"✅ Świetnie! To: {poprawna}")
+                st.balloons()
+            else:
+                st.error(f"❌ Nie. To: {poprawna}")
 else:
-    st.info("Kliknij przycisk powyżej, aby zacząć naukę!")
+    st.info("Kliknij przycisk powyżej, aby wylosować grzyba.")
