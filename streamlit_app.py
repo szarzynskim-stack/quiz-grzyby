@@ -3,101 +3,50 @@ import random
 import requests
 import os
 
-st.set_page_config(page_title="Trener Grzybiarza 2000", page_icon="🍄")
+# Konfiguracja strony
+st.set_page_config(page_title="Trener Grzybiarza 2000", page_icon="🍄", layout="wide")
 
-# FUNKCJA POBIERANIA ZDJĘĆ
-def pobierz_foto(nazwa_pl, nazwa_lat):
+# FUNKCJA POBIERANIA FOTO Z WIKIPEDII
+def pobierz_foto(n1, n2):
     api = "https://pl.wikipedia.org/w/api.php"
-    # Szukamy najpierw po łacinie (dokładniej), potem po polsku
-    for fraza in [nazwa_lat, nazwa_pl]:
+    for fraza in [n1, n2]:
         params = {
-            "action": "query", "format": "json", "prop": "pageimages",
-            "titles": fraza, "pithumbsize": 600
+            "action": "query", 
+            "format": "json", 
+            "prop": "pageimages", 
+            "titles": fraza, 
+            "pithumbsize": 800
         }
         try:
-            r = requests.get(api, params=params, timeout=2).json()
+            r = requests.get(api, params=params, timeout=3).json()
             pages = r.get("query", {}).get("pages", {})
             for p in pages:
                 if "thumbnail" in pages[p]:
                     return pages[p]["thumbnail"]["source"]
-        except:
+        except: 
             continue
     return None
 
-# FUNKCJA WCZYTYWANIA - CZYTA CAŁY TWÓJ PLIK
+# FUNKCJA WCZYTYWANIA TWOJEJ WIELKIEJ LISTY
 @st.cache_data
-def wczytaj_pelna_baze():
-    lista_grzybow = []
+def wczytaj_wszystko():
+    lista = []
     sciezka = "grzyby_lista.txt"
     if os.path.exists(sciezka):
         with open(sciezka, "r", encoding="utf-8") as f:
             for linia in f:
-                # Obsługa różnych separatorów i błędnych linii
                 if ";" in linia:
                     czesci = linia.strip().split(";")
                     if len(czesci) >= 2:
-                        p, l = czesci[0].strip(), czesci[1].strip()
-                        if p and l:
-                            lista_grzybow.append((p, l))
-    # Usuwamy duplikaty, by nie losować tego samego
-    return list(set(lista_grzybow))
+                        # Zapisujemy parę: (część 1, część 2)
+                        lista.append((czesci[0].strip(), czesci[1].strip()))
+    # Usuwamy duplikaty, by przy 2000 wierszach nie było powtórek
+    return list(set(lista))
 
-# INICJALIZACJA SESJI
-if 'grzyb' not in st.session_state:
-    st.session_state.grzyb = None
-if 'foto' not in st.session_state:
-    st.session_state.foto = None
+# ZARZĄDZANIE SESJĄ (PAMIĘĆ APLIKACJI)
+if 'aktualny_grzyb' not in st.session_state:
+    st.session_state.aktualny_grzyb = None
+if 'aktualne_foto' not in st.session_state:
+    st.session_state.aktualne_foto = None
 
-baza = wczytaj_pelna_baze()
-
-# PANEL BOCZNY
-st.sidebar.title("🍄 Statystyki")
-st.sidebar.write(f"Gatunków w bazie: **{len(baza)}**")
-if st.sidebar.button("Odśwież bazę"):
-    st.cache_data.clear()
-    st.rerun()
-
-# GŁÓWNA STRONA
-st.title("🍄 Profesjonalny Trener Grzybiarza")
-
-if st.button("Następny grzyb ➡️"):
-    elementy = list(baza)
-    random.shuffle(elementy)
-    
-    with st.spinner("Szukam zdjęcia w Wikipedii..."):
-        znaleziono = False
-        # Sprawdzamy pierwsze 50 losowych grzybów, aż znajdziemy zdjęcie
-        for g_pl, g_lat in elementy[:50]:
-            url = pobierz_foto(g_pl, g_lat)
-            if url:
-                st.session_state.grzyb = (g_pl, g_lat)
-                st.session_state.foto = url
-                znaleziono = True
-                break
-        
-        if not znaleziono:
-            st.error("Nie udało się pobrać zdjęcia dla tej partii. Spróbuj jeszcze raz!")
-        else:
-            st.rerun()
-
-# INTERFEJS QUIZU
-if st.session_state.foto:
-    st.image(st.session_state.foto, use_container_width=True)
-    
-    # NAPRAWIONA SKŁADNIA FORMULARZA (z dwukropkiem)
-    with st.form(key="form_quiz"):
-        tryb = st.radio("Zgadujesz:", ["Polską nazwę", "Łacińską nazwę"], horizontal=True)
-        odp = st.text_input("Twoja odpowiedź:")
-        submit = st.form_submit_button("Sprawdź")
-        
-        if submit:
-            n_pl, n_lat = st.session_state.grzyb
-            poprawna = n_pl if tryb == "Polską nazwę" else n_lat
-            
-            if odp.strip().lower() == poprawna.lower():
-                st.success(f"✅ BRAWO! To faktycznie: {poprawna}")
-                st.balloons()
-            else:
-                st.error(f"❌ NIE. Poprawna nazwa to: {poprawna}")
-else:
-    st.info("Kliknij przycisk powyżej, aby wylosować grzyba z Twojej bazy!")
+# Pobieramy dane
