@@ -6,16 +6,18 @@ import os
 # --- KONFIGURACJA ---
 st.set_page_config(page_title="Trener Grzybiarza 1000", page_icon="🍄")
 
+# Funkcja pobierająca obrazek z zabezpieczeniem przed zawieszeniem
 def pobierz_obrazek(nazwa_pl, nazwa_lat):
-    """Pobiera url zdjęcia. Zwraca None, jeśli nie znajdzie."""
+    api_url = "https://pl.wikipedia.org/w/api.php"
+    # Szukamy najpierw po łacinie, potem po polsku
     for fraza in [nazwa_lat, nazwa_pl]:
-        api_url = "https://pl.wikipedia.org/w/api.php"
         params = {
             "action": "query", "format": "json", "prop": "pageimages",
-            "titles": fraza, "pithumbsize": 500
+            "titles": fraza, "pithumbsize": 600
         }
         try:
-            res = requests.get(api_url, params=params, timeout=3).json()
+            # Bardzo krótki timeout (2 sekundy), żeby aplikacja nie muliła
+            res = requests.get(api_url, params=params, timeout=2).json()
             pages = res.get("query", {}).get("pages", {})
             for p in pages:
                 if "thumbnail" in pages[p]:
@@ -25,7 +27,6 @@ def pobierz_obrazek(nazwa_pl, nazwa_lat):
     return None
 
 def laduj_baze():
-    """Wczytuje unikalne gatunki (usuwa duplikaty)."""
     dane = {}
     if os.path.exists("grzyby_lista.txt"):
         with open("grzyby_lista.txt", "r", encoding="utf-8") as f:
@@ -38,55 +39,45 @@ def laduj_baze():
 # --- INICJALIZACJA ---
 baza = laduj_baze()
 
-if 'grzyb' not in st.session_state:
-    st.session_state.grzyb = None
-if 'foto' not in st.session_state:
-    st.session_state.foto = None
+if 'grzyb_dane' not in st.session_state:
+    st.session_state.grzyb_dane = None
+if 'foto_url' not in st.session_state:
+    st.session_state.foto_url = None
 
-# --- SIDEBAR ---
+# --- PANEL BOCZNY ---
 st.sidebar.header("📊 Statystyki")
-st.sidebar.write(f"Wszystkich gatunków w pliku: **{len(baza)}**")
-if st.sidebar.button("Wyczyść Cache"):
+st.sidebar.write(f"Gatunki w bazie: **{len(baza)}**")
+if st.sidebar.button("Wyczyść Cache / Odśwież"):
     st.cache_data.clear()
+    st.session_state.grzyb_dane = None
+    st.session_state.foto_url = None
     st.rerun()
 
-# --- GŁÓWNA PĘTLA ---
+# --- GŁÓWNA CZĘŚĆ ---
 st.title("🍄 Profesjonalny Trener Grzybiarza")
 
 if st.button("Następny grzyb ➡️"):
-    # Losujemy tak długo, aż znajdziemy zdjęcie
     gatunki = list(baza.items())
     random.shuffle(gatunki)
-    znalazlem = False
     
-    with st.spinner("Szukam gatunku z dostępnym zdjęciem..."):
-        for nazwa_pl, nazwa_lat in gatunki:
-            url = pobierz_obrazek(nazwa_pl, nazwa_lat)
+    znaleziono = False
+    with st.spinner("Szukam gatunku ze zdjęciem..."):
+        # Sprawdzamy pierwsze 20 wylosowanych, żeby nie czekać wiecznie
+        for n_pl, n_lat in gatunki[:20]:
+            url = pobierz_obrazek(n_pl, n_lat)
             if url:
-                st.session_state.grzyb = (nazwa_pl, nazwa_lat)
-                st.session_state.foto = url
-                znalazlem = True
+                st.session_state.grzyb_dane = (n_pl, n_lat)
+                st.session_state.foto_url = url
+                znaleziono = True
                 break
     
-    if not znalazlem:
-        st.error("Nie znaleziono zdjęć dla gatunków w bazie.")
+    if not znaleziono:
+        st.warning("Tym razem Wikipedia nie zwróciła zdjęcia. Spróbuj jeszcze raz!")
+    else:
+        st.rerun() # Odśwież, żeby pokazać nowe zdjęcie
 
-# --- WYŚWIETLANIE QUIZU ---
-if st.session_state.foto:
-    st.image(st.session_state.foto, use_container_width=True)
+# --- WYŚWIETLANIE ZAGADKI ---
+if st.session_state.foto_url:
+    st.image(st.session_state.foto_url, caption="Jak nazywa się ten grzyb?")
     
-    # Naprawiony formularz (poprawne wcięcia)
-    with st.form("quiz_form"):
-        st.write("Podaj nazwę łacińską tego grzyba:")
-        odp = st.text_input("Twoja odpowiedź:", key="input_odp")
-        sprawdz = st.form_submit_button("Sprawdź")
-        
-        if sprawdz:
-            poprawna = st.session_state.grzyb[1]
-            if odp.strip().lower() == poprawna.lower():
-                st.success(f"Genialnie! To faktycznie **{poprawna}**")
-                st.balloons()
-            else:
-                st.error(f"Niestety nie. To: **{poprawna}**")
-else:
-    st.info("Kliknij przycisk powyżej, aby wylosować grzyba ze zdjęciem.")
+    with st.form
