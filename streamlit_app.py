@@ -2,63 +2,48 @@ import streamlit as st
 import requests
 import random
 
-# Lista grzybów (Polska nazwa : Nazwa łacińska)
-GRZYBY = {
-    "Borowik szlachetny": "Boletus edulis",
-    "Podgrzybek brunatny": "Imleria badia",
-    "Czubajka kania": "Macrolepiota procera",
-    "Pieprznik jadalny": "Cantharellus cibarius",
-    "Muchomor czerwony": "Amanita muscaria",
-    "Muchomor sromotnikowy": "Amanita phalloides",
-    "Maślak zwyczajny": "Suillus luteus",
-    "Koźlarz babka": "Leccinum scabrum",
-    "Mleczaj rydz": "Lactarius deliciosus",
-    "Gąska zielonka": "Tricholoma equestre",
-    "Prawdziwek": "Boletus edulis"
-}
+st.set_page_config(page_title="Akademia Grzybiarza 1000+", page_icon="🍄")
+st.title("🍄 Profesjonalny Quiz Mykologiczny")
 
-st.set_page_config(page_title="Trener Grzybiarza", page_icon="🍄")
-st.title("🍄 Trener Grzybiarza")
+# Funkcja wczytująca listę z pliku
+@st.cache_data
+def laduj_grzyby():
+    grzyby = {}
+    with open("grzyby_lista.txt", "r", encoding="utf-8") as f:
+        for linia in f:
+            if ";" in linia:
+                pl, lat = linia.strip().split(";")
+                grzyby[pl] = lat
+    return grzyby
 
-if 'grzyb' not in st.session_state:
-    st.session_state.grzyb = random.choice(list(GRZYBY.keys()))
+BAZA = laduj_grzyby()
 
-def get_wiki_image(latin_name):
-    # Najbardziej stabilny sposób na pobranie miniatury z Wikipedii
-    url = f"https://pl.wikipedia.org/api/rest_v1/page/summary/{latin_name.replace(' ', '_')}"
-    headers = {'User-Agent': 'GrzybyQuiz/1.0'}
-    try:
-        response = requests.get(url, headers=headers).json()
-        return response.get('thumbnail', {}).get('source')
-    except:
-        return None
+if 'wybrany' not in st.session_state:
+    st.session_state.wybrany = random.choice(list(BAZA.keys()))
 
-# Poziom trudności
-poziom = st.radio("Wybierz poziom:", ["Łatwy (Polski)", "Trudny (Łacina)"])
+def get_wiki(latin):
+    url = f"https://pl.wikipedia.org/api/rest_v1/page/summary/{latin.replace(' ', '_')}"
+    res = requests.get(url, headers={'User-Agent': 'QuizBot/1.0'}).json()
+    return res.get('thumbnail', {}).get('source'), res.get('extract', '')
 
-# Wyświetlanie zdjęcia
-img_url = get_wiki_image(GRZYBY[st.session_state.grzyb])
+img, info = get_wiki(BAZA[st.session_state.wybrany])
 
-if img_url:
-    st.image(img_url, use_container_width=True)
-else:
-    st.warning("Szukam zdjęcia w lesie... Jeśli nie ma, kliknij 'Następny'")
+if img: st.image(img, use_container_width=True)
+else: st.warning("Brak zdjęcia w bazie. Kliknij Następny.")
+
+poziom = st.radio("Poziom:", ["Polska nazwa", "Łacina"])
 
 with st.form("quiz"):
-    if poziom == "Łatwy (Polski)":
-        odp = st.selectbox("Co to za grzyb?", ["---"] + sorted(list(GRZYBY.keys())))
-        poprawna = st.session_state.grzyb
-    else:
-        odp = st.text_input("Podaj nazwę łacińską:")
-        poprawna = GRZYBY[st.session_state.grzyb]
-
+    cel = st.session_state.wybrany if poziom == "Polska nazwa" else BAZA[st.session_state.wybrany]
+    odp = st.text_input("Twoja odpowiedź:")
     if st.form_submit_button("Sprawdź"):
-        if odp.lower() == poprawna.lower():
-            st.success(f"✅ BRAWO! To {st.session_state.grzyb}")
+        if odp.lower() == cel.lower():
+            st.success(f"✅ GENIALNIE! To {st.session_state.wybrany} ({BAZA[st.session_state.wybrany]})")
+            st.info(info) # Pokazuje encyklopedyczny opis grzyba!
             st.balloons()
         else:
-            st.error(f"❌ PUDŁO! To: {st.session_state.grzyb} ({GRZYBY[st.session_state.grzyb]})")
+            st.error(f"❌ PUDŁO. Poprawna nazwa to: {cel}")
 
 if st.button("Następny grzyb ➡️"):
-    st.session_state.grzyb = random.choice(list(GRZYBY.keys()))
+    st.session_state.wybrany = random.choice(list(BAZA.keys()))
     st.rerun()
