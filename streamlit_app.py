@@ -2,65 +2,75 @@ import streamlit as st
 import requests
 import random
 
-# Lista grzybów (Nazwa polska : Nazwa łacińska)
+# Rozszerzona lista grzybów (Nazwa polska : Nazwa łacińska)
+# Wybrałem te z "niebieskimi linkami" na Wikipedii
 GRZYBY = {
     "Borowik szlachetny": "Boletus edulis",
     "Podgrzybek brunatny": "Imleria badia",
     "Czubajka kania": "Macrolepiota procera",
-    "Pieprznik jadalny (Kurka)": "Cantharellus cibarius",
+    "Pieprznik jadalny": "Cantharellus cibarius",
     "Muchomor sromotnikowy": "Amanita phalloides",
     "Muchomor czerwony": "Amanita muscaria",
     "Maślak zwyczajny": "Suillus luteus",
     "Koźlarz babka": "Leccinum scabrum",
     "Mleczaj rydz": "Lactarius deliciosus",
-    "Gąska zielonka": "Tricholoma equestre"
+    "Gąska zielonka": "Tricholoma equestre",
+    "Opieńka miodowa": "Armillaria mellea",
+    "Boczniak ostrygowaty": "Pleurotus ostreatus",
+    "Borowik usiatkowany": "Boletus reticulatus",
+    "Piaskowiec modrzak": "Gyroporus cyanescens",
+    "Siedzun sosnowy": "Sparassis crispa"
 }
 
-st.title("🍄 Trener Grzybiarza: Zgadnij co to!")
-
-# Wybór poziomu
-poziom = st.radio("Wybierz poziom trudności:", ["Łatwy (Polska nazwa)", "Trudny (Łacińska nazwa)"])
+st.title("🍄 Trener Grzybiarza")
 
 if 'grzyb' not in st.session_state:
     st.session_state.grzyb = random.choice(list(GRZYBY.keys()))
 
 def pobierz_zdjecie(nazwa_lat):
-    # Funkcja pobierająca zdjęcie z Wikipedii
-    api_url = f"https://en.wikipedia.org/w/api.php?action=query&titles={nazwa_lat}&prop=pageimages&format=json&pithumbsize=500"
-    res = requests.get(api_url).json()
-    pages = res.get("query", {}).get("pages", {})
-    for p in pages:
-        return pages[p].get("thumbnail", {}).get("source")
+    # Dodano nagłówki (headers), żeby Wikipedia nie blokowała zapytania
+    headers = {'User-Agent': 'MonitorGrzybiarza/1.0 (kontakt@twojemail.com)'}
+    api_url = f"https://pl.wikipedia.org/w/api.php?action=query&titles={nazwa_lat}&prop=pageimages&format=json&pithumbsize=500"
+    
+    try:
+        res = requests.get(api_url, headers=headers).json()
+        pages = res.get("query", {}).get("pages", {})
+        for p in pages:
+            if "thumbnail" in pages[p]:
+                return pages[p]["thumbnail"]["source"]
+    except:
+        return None
     return None
+
+poziom = st.radio("Wybierz poziom:", ["Łatwy (Polski)", "Trudny (Łacina)"])
 
 current_lat = GRZYBY[st.session_state.grzyb]
 img_url = pobierz_zdjecie(current_lat)
 
 if img_url:
-    st.image(img_url, caption="Co to za gatunek?")
+    st.image(img_url, use_container_width=True)
 else:
-    st.warning("Nie udało się pobrać zdjęcia z Wikipedii. Spróbuj kolejnego!")
+    st.info("Ładowanie zdjęcia z Wikipedii... Jeśli nie widzisz obrazka, kliknij 'Następny'")
 
-# Formularz odpowiedzi
 with st.form("quiz"):
-    if poziom == "Łatwy (Polska nazwa)":
-        odp = st.selectbox("Twoja odpowiedź:", ["---"] + sorted(list(GRZYBY.keys())))
+    if poziom == "Łatwy (Polski)":
+        opcje = random.sample(list(GRZYBY.keys()), 3)
+        if st.session_state.grzyb not in opcje:
+            opcje[0] = st.session_state.grzyb
+        random.shuffle(opcje)
+        odp = st.selectbox("Co to za grzyb?", ["---"] + opcje)
         poprawna = st.session_state.grzyb
     else:
-        odp = st.text_input("Wpisz nazwę łacińską (np. Boletus edulis):")
+        odp = st.text_input("Wpisz nazwę łacińską:")
         poprawna = current_lat
 
-    submit = st.form_submit_button("Sprawdź!")
-    
-    if submit:
+    submitted = st.form_submit_button("Sprawdź")
+    if submitted:
         if odp.lower() == poprawna.lower():
             st.success(f"Brawo! To {st.session_state.grzyb} ({current_lat})")
-            if st.button("Następny grzyb"):
-                st.session_state.grzyb = random.choice(list(GRZYBY.keys()))
-                st.rerun()
         else:
-            st.error(f"Niestety nie. Spróbuj jeszcze raz!")
+            st.error(f"Błąd. To jest: {st.session_state.grzyb}")
 
-if st.button("Losuj innego grzyba"):
+if st.button("Następny grzyb"):
     st.session_state.grzyb = random.choice(list(GRZYBY.keys()))
     st.rerun()
