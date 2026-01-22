@@ -4,6 +4,7 @@ import random
 from datetime import datetime, timedelta
 import json
 import os
+import pandas as pd
 
 st.set_page_config(page_title="Akademia Grzybiarza - Kalendarz", page_icon="🍄")
 st.title("🍄 Trener z inteligentnym kalendarzem")
@@ -20,7 +21,6 @@ def laduj_liste():
     except: return {"Borowik szlachetny": "Boletus edulis"}
     return grzyby
 
-# Ładowanie postępów (kiedy powtórzyć dany grzyb)
 def laduj_postepy():
     if os.path.exists("postepy.json"):
         with open("postepy.json", "r") as f:
@@ -35,58 +35,18 @@ BAZA = laduj_liste()
 if 'postepy' not in st.session_state:
     st.session_state.postepy = laduj_postepy()
 
-# --- WYBÓR GRZYBA DO NAUKI ---
-def losuj_grzyba():
-    dzis = datetime.now().strftime("%Y-%m-%d")
-    do_powtorki = [g for g in BAZA.keys() if st.session_state.postepy.get(g, "2000-01-01") <= dzis]
+# --- WIDOK KALENDARZA NA BOKU ---
+def pokaz_prognoze():
+    st.sidebar.header("📅 Twój Kalendarz Nauki")
+    dzis = datetime.now().date()
+    dni = [(dzis + timedelta(days=i)) for i in range(7)]
+    dni_str = [d.strftime("%Y-%m-%d") for d in dni]
     
-    if do_powtorki:
-        return random.choice(do_powtorki)
-    return random.choice(list(BAZA.keys()))
-
-if 'wybrany' not in st.session_state:
-    st.session_state.wybrany = losuj_grzyba()
-if 'licznik' not in st.session_state:
-    st.session_state.licznik = 0
-
-# --- POBIERANIE DANYCH Z WIKI ---
-def get_wiki(latin):
-    url = f"https://pl.wikipedia.org/api/rest_v1/page/summary/{latin.replace(' ', '_')}"
-    try:
-        res = requests.get(url, headers={'User-Agent': 'QuizBot/1.0'}, timeout=5).json()
-        return res.get('thumbnail', {}).get('source'), res.get('extract', 'Brak opisu.')
-    except: return None, ""
-
-img, info = get_wiki(BAZA[st.session_state.wybrany])
-
-# --- INTERFEJS ---
-if img: st.image(img, use_container_width=True)
-
-poziom = st.radio("Tryb:", ["Polska nazwa", "Łacina"])
-with st.form("quiz_form"):
-    cel = st.session_state.wybrany if poziom == "Polska nazwa" else BAZA[st.session_state.wybrany]
-    odp = st.text_input("Twoja odpowiedź:", key=f"in_{st.session_state.licznik}")
-    
-    if st.form_submit_button("Sprawdź"):
-        dzis_dt = datetime.now()
-        if odp.strip().lower() == cel.lower():
-            st.success(f"✅ BRAWO! Następna powtórka tego grzyba za 7 dni.")
-            # Ustawiamy powtórkę za 7 dni
-            st.session_state.postepy[st.session_state.wybrany] = (dzis_dt + timedelta(days=7)).strftime("%Y-%m-%d")
-            st.balloons()
-            st.info(info)
-        else:
-            st.error(f"❌ BŁĄD. To był: {cel}. Powtórka jutro!")
-            # Ustawiamy powtórkę na jutro
-            st.session_state.postepy[st.session_state.wybrany] = (dzis_dt + timedelta(days=1)).strftime("%Y-%m-%d")
+    plan = []
+    for d_str in dni_str:
+        ile = list(st.session_state.postepy.values()).count(d_str)
+        # Dla dnia dzisiejszego doliczamy też te, które pominęliśmy wcześniej
+        if d_str == dzis.strftime("%Y-%m-%d"):
+            ile = len([v for v in st.session_state.postepy.values() if v <= d_str])
         
-        zapisz_postepy(st.session_state.postepy)
-
-if st.button("Następny grzyb (z kalendarza) ➡️"):
-    st.session_state.wybrany = losuj_grzyba()
-    st.session_state.licznik += 1
-    st.rerun()
-
-# Statystyki na boku
-st.sidebar.write(f"Wszystkich grzybów: {len(BAZA)}")
-st.sidebar.write(f"Opanowanych (powtórka w przyszłości): {len([v for v in st.session_state.postepy.values() if v > datetime.now().strftime('%Y-%m-%d')])}")
+        nazwa_dnia = "Dziś" if d_str == dzis.strftime("%Y-%m-%d") else d
