@@ -1,13 +1,15 @@
 import streamlit as st
 import requests
 import random
+from datetime import datetime, timedelta
+import json
+import os
 
-st.set_page_config(page_title="Akademia Grzybiarza 1000+", page_icon="🍄")
-st.title("🍄 Profesjonalny Quiz Mykologiczny")
+st.set_page_config(page_title="Akademia Grzybiarza - Kalendarz", page_icon="🍄")
+st.title("🍄 Trener z inteligentnym kalendarzem")
 
-# Funkcja wczytująca listę z pliku
-@st.cache_data
-def laduj_grzyby():
+# --- LOGIKA BAZY DANYCH ---
+def laduj_liste():
     grzyby = {}
     try:
         with open("grzyby_lista.txt", "r", encoding="utf-8") as f:
@@ -15,54 +17,76 @@ def laduj_grzyby():
                 if ";" in linia:
                     pl, lat = linia.strip().split(";")
                     grzyby[pl] = lat
-    except FileNotFoundError:
-        return {"Borowik szlachetny": "Boletus edulis"} # Dane ratunkowe
+    except: return {"Borowik szlachetny": "Boletus edulis"}
     return grzyby
 
-BAZA = laduj_grzyby()
+# Ładowanie postępów (kiedy powtórzyć dany grzyb)
+def laduj_postepy():
+    if os.path.exists("postepy.json"):
+        with open("postepy.json", "r") as f:
+            return json.load(f)
+    return {}
 
-# Inicjalizacja stanu gry
+def zapisz_postepy(postepy):
+    with open("postepy.json", "w") as f:
+        json.dump(postepy, f)
+
+BAZA = laduj_liste()
+if 'postepy' not in st.session_state:
+    st.session_state.postepy = laduj_postepy()
+
+# --- WYBÓR GRZYBA DO NAUKI ---
+def losuj_grzyba():
+    dzis = datetime.now().strftime("%Y-%m-%d")
+    do_powtorki = [g for g in BAZA.keys() if st.session_state.postepy.get(g, "2000-01-01") <= dzis]
+    
+    if do_powtorki:
+        return random.choice(do_powtorki)
+    return random.choice(list(BAZA.keys()))
+
 if 'wybrany' not in st.session_state:
-    st.session_state.wybrany = random.choice(list(BAZA.keys()))
-if 'licznik_testu' not in st.session_state:
-    st.session_state.licznik_testu = 0
+    st.session_state.wybrany = losuj_grzyba()
+if 'licznik' not in st.session_state:
+    st.session_state.licznik = 0
 
+# --- POBIERANIE DANYCH Z WIKI ---
 def get_wiki(latin):
     url = f"https://pl.wikipedia.org/api/rest_v1/page/summary/{latin.replace(' ', '_')}"
     try:
         res = requests.get(url, headers={'User-Agent': 'QuizBot/1.0'}, timeout=5).json()
         return res.get('thumbnail', {}).get('source'), res.get('extract', 'Brak opisu.')
-    except:
-        return None, "Błąd połączenia z Wikipedią."
+    except: return None, ""
 
 img, info = get_wiki(BAZA[st.session_state.wybrany])
 
-if img: 
-    st.image(img, use_container_width=True)
-else: 
-    st.warning("Brak zdjęcia w bazie Wikipedii dla tego gatunku.")
+# --- INTERFEJS ---
+if img: st.image(img, use_container_width=True)
 
-poziom = st.radio("Wybierz tryb nauki:", ["Polska nazwa", "Nazwa łacińska"])
-
-# Formularz z unikalnym kluczem, który czyści pole po zmianie grzyba
-with st.form("quiz_form", clear_on_submit=False):
+poziom = st.radio("Tryb:", ["Polska nazwa", "Łacina"])
+with st.form("quiz_form"):
     cel = st.session_state.wybrany if poziom == "Polska nazwa" else BAZA[st.session_state.wybrany]
+    odp = st.text_input("Twoja odpowiedź:", key=f"in_{st.session_state.licznik}")
     
-    # Klucz pola zależy od licznika - gdy licznik rośnie, pole się czyści
-    odp = st.text_input("Twoja odpowiedź:", key=f"input_{st.session_state.licznik_testu}")
-    
-    sprawdz = st.form_submit_button("Sprawdź")
-    
-    if sprawdz:
+    if st.form_submit_button("Sprawdź"):
+        dzis_dt = datetime.now()
         if odp.strip().lower() == cel.lower():
-            st.success(f"✅ DOSKONALE! To {st.session_state.wybrany} ({BAZA[st.session_state.wybrany]})")
+            st.success(f"✅ BRAWO! Następna powtórka tego grzyba za 7 dni.")
+            # Ustawiamy powtórkę za 7 dni
+            st.session_state.postepy[st.session_state.wybrany] = (dzis_dt + timedelta(days=7)).strftime("%Y-%m-%d")
             st.balloons()
             st.info(info)
         else:
-            st.error(f"❌ NIESTETY. Poprawna odpowiedź to: {cel}")
+            st.error(f"❌ BŁĄD. To był: {cel}. Powtórka jutro!")
+            # Ustawiamy powtórkę na jutro
+            st.session_state.postepy[st.session_state.wybrany] = (dzis_dt + timedelta(days=1)).strftime("%Y-%m-%d")
+        
+        zapisz_postepy(st.session_state.postepy)
 
-# Przycisk następnego grzyba zwiększa licznik, co wymusza czyszczenie pola tekstowego
-if st.button("Następny grzyb ➡️"):
-    st.session_state.wybrany = random.choice(list(BAZA.keys()))
-    st.session_state.licznik_testu += 1
+if st.button("Następny grzyb (z kalendarza) ➡️"):
+    st.session_state.wybrany = losuj_grzyba()
+    st.session_state.licznik += 1
     st.rerun()
+
+# Statystyki na boku
+st.sidebar.write(f"Wszystkich grzybów: {len(BAZA)}")
+st.sidebar.write(f"Opanowanych (powtórka w przyszłości): {len([v for v in st.session_state.postepy.values() if v > datetime.now().strftime('%Y-%m-%d')])}")
