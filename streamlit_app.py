@@ -3,10 +3,10 @@ import random
 import requests
 import os
 
-# Konfiguracja strony
+# Konfiguracja wyświetlania
 st.set_page_config(page_title="Trener Grzybiarza 2000", page_icon="🍄", layout="wide")
 
-# FUNKCJA POBIERANIA FOTO Z WIKIPEDII
+# Funkcja pobierania zdjęć z Wikipedii
 def pobierz_foto(n1, n2):
     api = "https://pl.wikipedia.org/w/api.php"
     for fraza in [n1, n2]:
@@ -27,9 +27,9 @@ def pobierz_foto(n1, n2):
             continue
     return None
 
-# FUNKCJA WCZYTYWANIA TWOJEJ WIELKIEJ LISTY
+# Funkcja wczytywania listy (odporna na puste pliki)
 @st.cache_data
-def wczytaj_wszystko():
+def wczytaj_baze():
     lista = []
     sciezka = "grzyby_lista.txt"
     if os.path.exists(sciezka):
@@ -38,15 +38,40 @@ def wczytaj_wszystko():
                 if ";" in linia:
                     czesci = linia.strip().split(";")
                     if len(czesci) >= 2:
-                        # Zapisujemy parę: (część 1, część 2)
                         lista.append((czesci[0].strip(), czesci[1].strip()))
-    # Usuwamy duplikaty, by przy 2000 wierszach nie było powtórek
     return list(set(lista))
 
-# ZARZĄDZANIE SESJĄ (PAMIĘĆ APLIKACJI)
+# Inicjalizacja pamięci sesji
 if 'aktualny_grzyb' not in st.session_state:
     st.session_state.aktualny_grzyb = None
 if 'aktualne_foto' not in st.session_state:
     st.session_state.aktualne_foto = None
 
-# Pobieramy dane
+baza = wczytaj_baze()
+
+# PANEL BOCZNY
+st.sidebar.title("📊 Statystyki")
+st.sidebar.metric("Gatunków w Twoim pliku", len(baza))
+if st.sidebar.button("🔄 Odśwież listę z GitHub"):
+    st.cache_data.clear()
+    st.rerun()
+
+# STRONA GŁÓWNA
+st.title("🍄 Profesjonalny Trener Grzybiarza")
+
+if st.button("Następny grzyb ➡️"):
+    if not baza:
+        st.error("Baza jest pusta! Wklej swoje 2000+ wierszy do pliku grzyby_lista.txt.")
+    else:
+        with st.spinner("Szukam zdjęcia dla losowego gatunku..."):
+            testowa_lista = list(baza)
+            random.shuffle(testowa_lista)
+            znaleziono = False
+            
+            # Przeszukujemy bazę, aż trafimy na grzyba z fotką
+            for g1, g2 in testowa_lista[:60]:
+                url = pobierz_foto(g1, g2)
+                if url:
+                    st.session_state.aktualny_grzyb = (g1, g2)
+                    st.session_state.aktualne_foto = url
+                    zn
