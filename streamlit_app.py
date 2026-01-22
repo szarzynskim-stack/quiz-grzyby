@@ -92,3 +92,21 @@ with c1:
 with c2:
     tryb = st.radio("Zgadujesz:", ["Polska", "Łacina"])
     with st.form("quiz_form"):
+        poprawne = st.session_state.aktywny if tryb == "Polska" else BAZA[st.session_state.aktywny]
+        odp = st.text_input("Twoja odpowiedź:", key=f"q_{st.session_state.licznik}")
+        if st.form_submit_button("Sprawdź"):
+            teraz = datetime.now()
+            if odp.strip().lower() == poprawne.lower():
+                st.success("✅ Świetnie! Powtórka za 7 dni.")
+                st.session_state.postepy[st.session_state.aktywny] = (teraz + timedelta(days=7)).strftime("%Y-%m-%d")
+                st.balloons()
+                st.write(info)
+            else:
+                st.error(f"❌ To: {poprawne}. Powtórka jutro.")
+                st.session_state.postepy[st.session_state.aktywny] = (teraz + timedelta(days=1)).strftime("%Y-%m-%d")
+            zapisz_postepy(st.session_state.postepy)
+
+if st.button("Następny grzyb ➡️"):
+    st.session_state.aktywny = losuj()
+    st.session_state.licznik += 1
+    st.rerun()
