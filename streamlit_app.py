@@ -8,6 +8,7 @@ st.set_page_config(page_title="Trener Grzybiarza 2000", page_icon="🍄")
 # FUNKCJA POBIERANIA ZDJĘĆ
 def pobierz_foto(nazwa_pl, nazwa_lat):
     api = "https://pl.wikipedia.org/w/api.php"
+    # Szukamy najpierw po łacinie (dokładniej), potem po polsku
     for fraza in [nazwa_lat, nazwa_pl]:
         params = {
             "action": "query", "format": "json", "prop": "pageimages",
@@ -23,27 +24,31 @@ def pobierz_foto(nazwa_pl, nazwa_lat):
             continue
     return None
 
-# FUNKCJA WCZYTYWANIA - ODPORNA NA BŁĘDY W PLIKU
-def wczytaj_baze():
+# FUNKCJA WCZYTYWANIA - CZYTA CAŁY TWÓJ PLIK
+@st.cache_data
+def wczytaj_pelna_baze():
     lista_grzybow = []
-    if os.path.exists("grzyby_lista.txt"):
-        with open("grzyby_lista.txt", "r", encoding="utf-8") as f:
+    sciezka = "grzyby_lista.txt"
+    if os.path.exists(sciezka):
+        with open(sciezka, "r", encoding="utf-8") as f:
             for linia in f:
+                # Obsługa różnych separatorów i błędnych linii
                 if ";" in linia:
                     czesci = linia.strip().split(";")
                     if len(czesci) >= 2:
                         p, l = czesci[0].strip(), czesci[1].strip()
-                        if p and l: # Dodajemy tylko jeśli obie nazwy istnieją
+                        if p and l:
                             lista_grzybow.append((p, l))
-    return list(set(lista_grzybow)) # Usuwamy duplikaty automatycznie
+    # Usuwamy duplikaty, by nie losować tego samego
+    return list(set(lista_grzybow))
 
-# SESJA
+# INICJALIZACJA SESJI
 if 'grzyb' not in st.session_state:
     st.session_state.grzyb = None
 if 'foto' not in st.session_state:
     st.session_state.foto = None
 
-baza = wczytaj_baze()
+baza = wczytaj_pelna_baze()
 
 # PANEL BOCZNY
 st.sidebar.title("🍄 Statystyki")
@@ -56,10 +61,13 @@ if st.sidebar.button("Odśwież bazę"):
 st.title("🍄 Profesjonalny Trener Grzybiarza")
 
 if st.button("Następny grzyb ➡️"):
-    random.shuffle(baza)
-    with st.spinner("Przeszukuję bazę zdjęć..."):
+    elementy = list(baza)
+    random.shuffle(elementy)
+    
+    with st.spinner("Szukam zdjęcia w Wikipedii..."):
         znaleziono = False
-        for g_pl, g_lat in baza[:40]: # Szukamy w pierwszych 40 losowych
+        # Sprawdzamy pierwsze 50 losowych grzybów, aż znajdziemy zdjęcie
+        for g_pl, g_lat in elementy[:50]:
             url = pobierz_foto(g_pl, g_lat)
             if url:
                 st.session_state.grzyb = (g_pl, g_lat)
@@ -68,7 +76,7 @@ if st.button("Następny grzyb ➡️"):
                 break
         
         if not znaleziono:
-            st.error("Nie znaleziono zdjęć dla tej partii. Spróbuj jeszcze raz!")
+            st.error("Nie udało się pobrać zdjęcia dla tej partii. Spróbuj jeszcze raz!")
         else:
             st.rerun()
 
@@ -76,6 +84,7 @@ if st.button("Następny grzyb ➡️"):
 if st.session_state.foto:
     st.image(st.session_state.foto, use_container_width=True)
     
+    # NAPRAWIONA SKŁADNIA FORMULARZA (z dwukropkiem)
     with st.form(key="form_quiz"):
         tryb = st.radio("Zgadujesz:", ["Polską nazwę", "Łacińską nazwę"], horizontal=True)
         odp = st.text_input("Twoja odpowiedź:")
@@ -86,9 +95,9 @@ if st.session_state.foto:
             poprawna = n_pl if tryb == "Polską nazwę" else n_lat
             
             if odp.strip().lower() == poprawna.lower():
-                st.success(f"✅ BRAWO! To: {poprawna}")
+                st.success(f"✅ BRAWO! To faktycznie: {poprawna}")
                 st.balloons()
             else:
                 st.error(f"❌ NIE. Poprawna nazwa to: {poprawna}")
 else:
-    st.info("Kliknij przycisk, aby wylosować grzyba!")
+    st.info("Kliknij przycisk powyżej, aby wylosować grzyba z Twojej bazy!")
